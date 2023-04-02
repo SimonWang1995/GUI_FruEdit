@@ -1,1 +1,1 @@
-GUI FruEdit Tool V0.1
+# GUI Fru Edit Tool V1

@@ -1,59 +1,134 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 from tkinter import *
 import re
-# from Tkinter.messagebox import showinfo, showwarning
 from tkinter.messagebox import *
 import os
+from threading import Thread
 import subprocess
 
+"""
+    Inventec FAE
+    Author: Simon Wang
+    Modify Date: 2022/04/13
+    Description:
+    Fru Edit GUI Kit, Without Extra
+"""
 
-class window():
-    def __init__(self):
-        self.root = Tk()
-        self.root.title("Fru Edit")
-        # self.root.geometry("500x500+100+100")
-        fup = Frame(self.root)
 
-        fupleft = Frame(fup, borderwidth=5)
-        Label(fupleft, text="IP Address:", borderwidth=5).grid(row=0, column=0, stick=E)
-        self.peip = StringVar()
-        Entry(fupleft, textvariable=self.peip, width=20).grid(row=0, column=1)
-        self.peip.set("localhost")
-        # self.peip.set("192.168.0.102")
-        Label(fupleft, text="User Name:", borderwidth=5).grid(row=1, column=0, stick=E)
-        self.peuser = StringVar()
-        Entry(fupleft, textvariable=self.peuser, width=20).grid(row=1, column=1)
-        self.peuser.set("admin")
-        Label(fupleft, text="Password:", borderwidth=5).grid(row=2, column=0, stick=E)
-        self.pepwd = StringVar()
-        Entry(fupleft, textvariable=self.pepwd, width=20).grid(row=2, column=1)
-        self.pepwd.set("admin")
-        fupleft.pack(side=LEFT)
-        # +++++++++++++++++++++++++++++===========================
+_HOME_PATH = os.path.dirname(__file__)
+
+
+class LoginPage:
+    def __init__(self, master=None):
+        self.root = master
+        self.root.geometry('%dx%d' % (300, 180))
+        self.bmcip = StringVar()
+        self.username = StringVar()
+        self.password = StringVar()
         self.platform = sys.platform
         if self.platform == "linux":
             self.tool = "ipmitool"
         elif self.platform == "win32":
-            self.tool = ".\win32\ipmitool.exe"
-        fupright = Frame(fup, borderwidth=5)
-        Button(fupright, text="Connect", borderwidth=5, width=10, command=self.connect).pack(side=TOP, ipady=3)
-        Button(fupright, text="Refresh", borderwidth=5, width=10, command=self.connect).pack(side=BOTTOM, ipady=3)
-        fupright.pack(side=RIGHT)
-        fup.pack(side=TOP)
-        # ===============================================================================================================
+            self.tool = os.path.join(_HOME_PATH, "win32" + os.sep + "ipmitool.exe")
+        self.IPMI = ""
+        self.createpage()
+
+    def createpage(self):
+        self.page = Frame(self.root)
+        self.page.pack()
+        Label(self.page).grid(row=0, stick=W)
+        Label(self.page, text='IP地址: ').grid(row=1, stick=W, pady=10)
+        Entry(self.page, textvariable=self.bmcip).grid(row=1, column=1, stick=E)
+        Label(self.page, text='账户: ').grid(row=2, stick=W, pady=10)
+        Entry(self.page, textvariable=self.username).grid(row=2, column=1, stick=E)
+        Label(self.page, text='密码: ').grid(row=3, stick=W, pady=10)
+        Entry(self.page, textvariable=self.password, show='*').grid(row=3, column=1, stick=E)
+        Button(self.page, text='登陆', command=lambda tool=self.tool: self.logincheck(tool)).grid(row=4, stick=W, pady=10)
+        Button(self.page, text='退出', command=self.page.quit).grid(row=4, column=1, stick=E)
+
+    def logincheck(self, tool):
+        ip = self.bmcip.get()
+        name = self.username.get()
+        secret = self.password.get()
+        pattern = r"\b(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
+        if ip == "localhost":
+            self.IPMI = self.tool
+            self.page.destroy()
+            MainPage(self.root, self.IPMI, ip).getfru()
+        else:
+            res, msg = self.check_ip(ip)
+            if not res:
+                showwarning('Warning', msg)
+            elif len(name) != 0 and len(secret) != 0:
+                self.IPMI = self.tool + " -H %s -U %s -P %s " % (ip, name, secret)
+                #cmd=self.IPMI+"fru print"
+                if self.check_cmd(cmd=self.IPMI+"fru print"):
+                    self.page.destroy()
+                    MainPage(self.root, self.IPMI, ip).getfru()
+                else:
+                    showinfo(title='错误', message="无法获取Fru，请检查IP、账号和密码！")
+            else:
+                showinfo(title='错误', message='账号或密码错误！')
+#        print(self.IPMI)
+
+    @staticmethod
+    def check_cmd(cmd):
+        subpro = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if subpro.stderr.readlines():
+            return False
+        else:
+            return True
+
+    @staticmethod
+    def check_ip(ip):
+        res = False
+        msg = ""
+        ping_cmd = ""
+        pattern = r"\b(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
+        if re.match(pattern, ip):
+#            self.ipmitool = self.tool + " -H %s -U %s -P %s" % (self.IP, self.user, self.passwd)
+            if sys.platform == "win32":
+                ping_cmd = "ping -n 1 {}".format(ip)
+                # print "win32 ping status %s" % status
+            elif sys.platform == "linux":
+                ping_cmd = "ping -c 1 {}".format(ip)
+            status = subprocess.call(ping_cmd, shell=True)
+            if status:
+                # showwarning("Warning", "The host is Lost!")
+                res = False
+                msg = "Can't Ping BMC IP Address: {}".format(ip)
+            else:
+                res = True
+        else:
+            # showwarning("Warning", "IP address is wrong,\nPlease input again!!")
+            res = False
+            msg = "Wrong BMC Ip Address: {}".format(ip)
+        return res, msg
+
+
+class MainPage:
+    def __init__(self, master=None, tool=None, ip=None):
+        self.IP = ip
+        self.ipmitool = tool
+        self.Result = {}
+        self.root = master  # 定义内部变量root
+        self.root.geometry('%dx%d' % (500, 600))  # 设置窗口大小
+        self.createpage()
+
+    def createpage(self):
         fmiddle = Frame(self.root, borderwidth=5)
         # (row,Name,field,index,length,state)
         self.labellist = [(0, 'FRU Device Description', 'NULL', 'NULL', 0, DISABLED),
-                          (1, 'Chassis Type', 'NULL', 'NULL', 0, NORMAL),
+                          (1, 'Chassis Type', 'NULL', 'NULL', 0, DISABLED),
                           (2, 'Chassis Part Number', 'c', '0', 12, NORMAL),
                           (3, 'Chassis Serial', 'c', '1', 11, NORMAL),
                           (4, 'Chassis Extra', 'c', '2', 32, NORMAL),
                           (5, 'Board Mfg Date', 'NULL', 'NULL', 0, DISABLED),
-                          (6, 'Board Mfg', 'b', '0', 12, NORMAL),
+                          (6, 'Board Mfg', 'b', '0', 12, DISABLED),
                           (7, 'Board Product', 'b', '1', 16, NORMAL),
                           (8, 'Board Serial', 'b', '2', 10, NORMAL),
                           (9, 'Board Part Number', 'b', '3', 12, NORMAL),
-                          (10, 'Product Manufacturer', 'p', '0', 12, NORMAL),
+                          (10, 'Product Manufacturer', 'p', '0', 12, DISABLED),
                           (11, 'Product Name', 'p', '1', 32, NORMAL),
                           (12, 'Product Part Number', 'p', '2', 24, NORMAL),
                           (13, 'Product Version', 'p', '3', 6, NORMAL),
@@ -82,101 +157,99 @@ class window():
         fmiddle.pack()
         # ===========================================================================================================================================
         fdown = Frame(self.root, borderwidth=5)
+        Button(fdown, text="Refresh", command=self.getfru).grid(row=0, column=0, padx=100)
         ab = Button(fdown, text="Set All", command=self.setall)
         ab.bind("<Return>", lambda event: self.setall())
-        ab.pack(anchor=CENTER)
+        ab.grid(row=0, column=1, padx=100)
         fdown.pack()
         # ===========================================================================================================================================
         framelog = Frame(self.root, borderwidth=5)
-        self.log = Text(framelog, height=5, width=50)
-        self.log.pack()
-        framelog.pack()
+        self.log = Text(framelog, height=10, width=50)
+        self.log.pack(expand=YES)
+        framelog.pack(expand=YES)
 
-    # ===========================================================================================================================================
-    def setall(self):
-        if self.gettool():
-            for row, name, field, index, length, state in self.labellist:
-                if row != 0 and row != 1 and row != 5:
-                    self.setitem(row, name, field, index, length)
-
-    def gettool(self):
-        self.IP = self.peip.get()
-        self.user = self.peuser.get()
-        self.passwd = self.pepwd.get()
-        pattern = r"\b(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
-        if self.IP == "localhost":
-            self.ipmitool = self.tool
-            state = True
-        elif re.match(pattern, self.IP):
-            self.ipmitool = self.tool + " -H %s -U %s -P %s" % (self.IP, self.user, self.passwd)
-            if self.platform == "win32":
-                status = subprocess.call("ping -n 1 %s" % self.peip.get(), shell=True)
-                # print "win32 ping status %s" % status
-            elif self.platform == "linux":
-                status = subprocess.call("ping -c 1 %s" % self.peip.get(), shell=True)
-            if status:
-                showwarning("Warning", "The host is Lost!")
-                state = False
-            else:
-                state = True
-        else:
-            showwarning("Warning", "IP address is wrong,\nPlease input again!!")
-            state = False
-        return state
-
+        # ===========================================================================================================================================
     def setitem(self, row, name, field, index, length):
+#        if LoginPage.check_ip(self,self.IP):
         tmp = self.entrylist[row].get()
         cmd = ""
         actuallen = len(tmp)
         if actuallen > length and row != 1:
             showwarning("Warning", "Your Input is too long ( %s Characters )!\n The max length is %s Characters" % (
-            actuallen, length))
+                actuallen, length))
             return
-        if row == 1:
-            if tmp not in ["0x17", "0x19", "0x01"]:
-                showinfo("Chassis Type Define",
-                         "Please enter the chassis type code as bellow:\nRack Mount Chassis : 0x17\n Multi-system Chassis :0x19\n Other :0x01")
-                return
-        if self.gettool():
-            if row == 1:
-                self.log.insert(END, "Update " + name + "......\n")
-                self.log.see(END)
-                self.log.update()
-                cmd = "%s raw 0x0a 0x12 0x00 0x5a 0x00 %s " % (self.ipmitool, self.entrylist[row].get())
-            else:
-                text = tmp + (length - len(tmp)) * " "
-                cmd = "%s fru edit 0 field %s %s '%s'" % (self.ipmitool, field, index, text)
-                self.log.insert(END, "Update " + name + "......\n")
-                self.log.see(END)
-                self.log.update()
-            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
-            while True:
-                line = result.stdout.readline()
-                self.log.insert(END, str(line.strip()) + "\n")
-                self.log.see(END)
-                self.log.update()
-                if not line:
-                    break
+        else:
+            text = tmp + (length - len(tmp)) * " "
+            cmd = "%s fru edit 0 field %s %s '%s'" % (self.ipmitool, field, index, text)
+            self.log.insert(END, "Update " + name + "......\n")
+            self.log.see(END)
+            self.log.update()
+        res = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
-    def connect(self):
-        if self.gettool():
+        # stdout,stderr=res.communicate()
+        # print(stderr)
+        # print(stdout)
+        while True:
+            line = res.stdout.readline()
+            self.log.insert(END, str(line.strip()) + "\n")
+            self.log.see(END)
+            self.log.update()
+            if not line:
+                break
+        if res.stderr.readlines():
+            self.Result[name] = "Fail"
+            self.log.insert(END, "Update " + name + " Failed \n\n")
+        else:
+            self.Result[name] = "Pass"
+            self.log.insert(END, "Update " + name + " Passed \n\n")
+
+    def setall(self):
+        self.Result.clear()
+        res, msg = LoginPage.check_ip(self.IP)
+        if res:
+            threadlist = []
+            for row, name, field, index, length, state in self.labellist:
+                if state != DISABLED:
+                    #self.setitem(row, name, field, index, length)
+                    t = Thread(self.setitem(row, name, field, index, length))
+                    t.start()
+                    threadlist.append(t)
+            for t in threadlist:
+                t.join()
+ #           print(self.Result)
+#            showinfo("Tip", "Update have been Completed !")
+            for key, value in self.Result.items():
+                self.log.insert(END, key+":"+value+"\n")
+            showinfo("Result", "Update have been Completed!,See window Event log for result")
+        else:
+            showwarning('Warning', msg)
+
+    def getfru(self):
+        res, msg = LoginPage.check_ip(self.IP)
+        if res:
             row = 0
             cmd = "%s fru list" % self.ipmitool
-            print
-            cmd
             fruinfo = os.popen(cmd)
-            print
-            fruinfo
+            # showinfo(message=cmd)
+            # fruinfo=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            # fruinfo.wait()
+            # # stdout, stderr = p.communicate()
+            # showinfo(message=fruinfo.stderr)
+            # # open("frufile.txt",'w').writelines(str(stdout))
             for line in fruinfo.readlines():
                 if line.strip() != "":
                     tmp = line.split(":", 1)[1].strip()
                     self.entrylist[row].set(tmp)
                     row = row + 1
+            # statu=fruinfo.wait()
             fruinfo.close()
-            showinfo("Tip", "Update have been Completed !")
+            showinfo("Tip", "Refresh have been Completed !")
+        else:
+            showwarning('Warning', msg)
 
 
-w = window()
-mainloop()
-
-
+if __name__ == "__main__":
+    root = Tk()
+    root.title("FruEdit")
+    LoginPage(root)
+    root.mainloop()
